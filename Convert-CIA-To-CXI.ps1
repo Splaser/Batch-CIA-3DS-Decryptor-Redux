@@ -973,9 +973,14 @@ function New-LooseInstallLayoutFromNcch {
         $mapRows.Add(("{0}.app,{1}.app,{2},{3}" -f $indexName, $contentIdName, $f.Name, $f.Length))
     }
 
-    $mapPath = Join-Path $OutRoot ("loose_map_{0}.csv" -f $tid)
-    Write-Utf8File -Path $mapPath -Content $mapRows
-    Write-Ok "  [OK] LOOSE MAP: $mapPath"
+    if ($ReportCsv) {
+        $mapPath = Join-Path $OutRoot ("loose_map_{0}.csv" -f $tid)
+        Write-Utf8File -Path $mapPath -Content $mapRows
+        Write-Ok "  [OK] LOOSE MAP: $mapPath"
+    }
+    else {
+        Write-Host "  [LOOSE MAP] CSV disabled. Use -ReportCsv to export loose_map."
+    }
 
     return $contentDir
 }
