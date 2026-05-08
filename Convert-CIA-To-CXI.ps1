@@ -11,6 +11,7 @@ param(
     [switch]$KeepWork,
     [switch]$KeepNcch,
     [switch]$KeepInstallCia,
+    [switch]$ReportCsv,
     [int]$MaxScanMB = 96
 )
 
@@ -86,7 +87,12 @@ foreach ($p in @($OutDir, $OutCxi, $OutCci, $OutInstallCia, $OutSdInstall, $OutL
     New-Item -ItemType Directory -Force -Path $p | Out-Null
 }
 
-$ReportPath = Join-Path $OutLog ("report_{0}.csv" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
+$ReportPath = if ($ReportCsv) {
+    Join-Path $OutLog ("report_{0}.csv" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
+} else {
+    $null
+}
+
 $ReportRows = New-Object System.Collections.Generic.List[object]
 
 function Write-Step { param([string]$Text) Write-Host $Text -ForegroundColor Cyan }
@@ -1395,5 +1401,10 @@ foreach ($file in $inputFiles) {
     }
 }
 
-$ReportRows | Export-Csv -Path $ReportPath -NoTypeInformation -Encoding UTF8
-Write-Host "[REPORT] $ReportPath"
+if ($ReportCsv) {
+    $ReportRows | Export-Csv -Path $ReportPath -NoTypeInformation -Encoding UTF8
+    Write-Host "[REPORT] $ReportPath"
+}
+else {
+    Write-Host "[REPORT] CSV disabled. Use -ReportCsv to export report."
+}
