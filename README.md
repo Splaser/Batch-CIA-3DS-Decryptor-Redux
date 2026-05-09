@@ -114,14 +114,41 @@ _cxi_out/loosepatch/title/0004008c/00078a00/content/00000001.app
 ```
 
 Copy the generated `title` folder into your Azahar/Citra virtual SD path:
-
-```text
-Nintendo 3DS/
-  00000000000000000000000000000000/
-    00000000000000000000000000000000/
-      title/
+```test
+_cxi_out/loosepatch/title/
 ```
-
+into your Azahar/Citra virtual SD path:
+```text
+data folder/
+  sdmc/
+    00000000000000000000000000000000/
+      00000000000000000000000000000000/
+        title/  <- copy/merge the generated title folder here
+```
+For Azahar Android, this is usually under the data folder you selected in Azahar:
+```text
+<Azahar data folder>/
+  sdmc/
+    00000000000000000000000000000000/
+      00000000000000000000000000000000/
+        title/
+```
+After copying, the final layout should look like:
+```text
+<Azahar/Citra data folder>/
+  sdmc/
+    00000000000000000000000000000000/
+      00000000000000000000000000000000/
+        title/
+          0004000e/
+            XXXXXXXX/
+              content/
+                00000000.app
+          0004008c/
+            XXXXXXXX/
+              content/
+                00000000.app
+```
 ## Important note about `.app` names
 
 Real CIA metadata uses ContentId values, but Azahar direct-CXI loose lookup expects index-based file names.
