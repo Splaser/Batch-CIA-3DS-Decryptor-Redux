@@ -23,8 +23,22 @@ Main goals:
 
 - Convert game CIA files directly into launchable `.cxi`
 - Automatically distinguish game CIA from Update/DLC CIA
-- Preserve useful title metadata in logs and CSV reports
-- Generate Azahar/Citra-compatible loose SD layouts for Update/DLC packages when normal CIA installation fails
+- Generate Azahar/Citra-compatible loose SD layouts for Update/DLC packages
+- Keep normal output clean by default
+- Preserve useful title metadata in optional logs and CSV reports
+- Keep the original batch workflow available for classic decryption tasks
+
+## Tested workflow
+
+This fork has been tested on **Azahar Android** with multiple modified / fan-translated CIA titles.
+
+Tested cases include:
+
+- Game CIA -> CXI conversion
+- Converted `.cxi` loading successfully in Azahar Android
+- Update/DLC CIA detected as install-only content
+- Update/DLC loose patch files copied into the virtual SDMC `title` layout
+- Patched content being picked up correctly by Azahar Android
 
 ## Features
 
@@ -62,25 +76,40 @@ Install TitleId:        0004008c00078a00
 Expected Base TitleId:  0004000000078a00
 ```
 
-The script first attempts a best-effort decrypted install CIA rebuild.  
-If `makerom` rejects the decrypted NCCH content, the script falls back to an Azahar/Citra loose SD layout.
+By default, install-only packages are exported as an Azahar/Citra loose SD layout under:
+
+```text
+_cxi_out/loosepatch/title/
+```
+
+If you also want a best-effort rebuilt decrypted install CIA for debugging or fallback use, run the script with:
+
+```powershell
+-KeepInstallCia
+```
+
+That optional output is written to:
+
+```text
+_cxi_out/_cia_install/
+```
 
 ### Azahar/Citra loose SD layout
 
 When CIA installation does not work, this fork can generate loose `.app` files under:
 
 ```text
-_cxi_out/sd_install/title/
+_cxi_out/loosepatch/title/
 ```
 
 Example output:
 
 ```text
-_cxi_out/sd_install/title/0004000e/001acb00/content/00000000.app
-_cxi_out/sd_install/title/0004000e/001acb00/content/00000001.app
+_cxi_out/loosepatch/title/0004000e/001acb00/content/00000000.app
+_cxi_out/loosepatch/title/0004000e/001acb00/content/00000001.app
 
-_cxi_out/sd_install/title/0004008c/00078a00/content/00000000.app
-_cxi_out/sd_install/title/0004008c/00078a00/content/00000001.app
+_cxi_out/loosepatch/title/0004008c/00078a00/content/00000000.app
+_cxi_out/loosepatch/title/0004008c/00078a00/content/00000001.app
 ...
 ```
 
@@ -119,27 +148,22 @@ For Azahar loose loading, those should still become:
 00000001.app
 ```
 
-The script also writes a mapping CSV:
+If `-ReportCsv` is enabled, the script also writes a loose mapping CSV:
 
 ```text
-_cxi_out/sd_install/loose_map_<titleid>.csv
+_cxi_out/loosepatch/loose_map_<titleid>.csv
 ```
 
 ## Output layout
+
+Default successful output is intentionally minimal:
 
 ```text
 _cxi_out/
   cxi/
     <game>.cxi
 
-  cci/
-    <game>.cci
-
-  cia_install/
-    <title> [0004000eXXXXXXXX].decrypted.cia
-    <title> [0004008cXXXXXXXX].decrypted.cia
-
-  sd_install/
+  loosepatch/
     title/
       0004000e/
         XXXXXXXX/
@@ -153,13 +177,52 @@ _cxi_out/
             00000000.app
             00000001.app
             ...
-
-    loose_map_<titleid>.csv
-
-  logs/
-    report_YYYYMMDD_HHMMSS.csv
-    work_xxx/
 ```
+
+Optional/internal output directories are created only when needed:
+
+```text
+_cxi_out/
+  _work/
+    work_xxx/
+      logs/
+```
+
+Created when:
+
+- A file fails, so the work folder is kept for debugging
+- `-KeepWork` is used
+
+```text
+_cxi_out/
+  _logs/
+    report_YYYYMMDD_HHMMSS.csv
+```
+
+Created when:
+
+- `-ReportCsv` is used
+
+```text
+_cxi_out/
+  _cci/
+    <game>.cci
+```
+
+Created when:
+
+- `-Mode CCI` or `-Mode Both` is used
+
+```text
+_cxi_out/
+  _cia_install/
+    <title> [0004000eXXXXXXXX].decrypted.cia
+    <title> [0004008cXXXXXXXX].decrypted.cia
+```
+
+Created when:
+
+- `-KeepInstallCia` is used
 
 ## Usage
 
@@ -174,6 +237,15 @@ By default, the script scans the current folder for `.cia` files and writes outp
 ```text
 .\_cxi_out
 ```
+
+Default output only keeps final usable files:
+
+```text
+_cxi_out/cxi/
+_cxi_out/loosepatch/
+```
+
+Temporary logs and work files are removed after a successful conversion.
 
 ### Common commands
 
@@ -201,18 +273,44 @@ Keep work files and logs for debugging:
 powershell -ExecutionPolicy Bypass -File .\Convert-CIA-To-CXI.ps1 -Force -KeepWork
 ```
 
+Generate a CSV report:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Convert-CIA-To-CXI.ps1 -Force -ReportCsv
+```
+
 Generate both CXI and CCI where possible:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Convert-CIA-To-CXI.ps1 -Mode Both -Force
 ```
 
+Also keep rebuilt decrypted install CIA output for Update/DLC packages:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Convert-CIA-To-CXI.ps1 -Force -KeepInstallCia
+```
+
+Debug everything:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Convert-CIA-To-CXI.ps1 -Force -KeepWork -ReportCsv -KeepInstallCia
+```
+
 ## Report CSV
 
-Every run writes a report:
+CSV reporting is disabled by default.
+
+To generate a report, use:
+
+```powershell
+-ReportCsv
+```
+
+The report is written to:
 
 ```text
-_cxi_out/logs/report_YYYYMMDD_HHMMSS.csv
+_cxi_out/_logs/report_YYYYMMDD_HHMMSS.csv
 ```
 
 Useful columns include:
@@ -234,6 +332,8 @@ loose_install_path
 log_dir
 ```
 
+For successful files, temporary work logs are normally deleted. Use `-KeepWork` if you want `log_dir` paths to remain available after the run.
+
 ## Troubleshooting
 
 ### Azahar says the ROM is encrypted
@@ -253,7 +353,7 @@ Some decrypted Update/DLC CIAs may still be rejected by Azahar's CIA installer o
 Use the generated loose SD layout instead:
 
 ```text
-_cxi_out/sd_install/title/
+_cxi_out/loosepatch/title/
 ```
 
 Copy this `title` folder into Azahar/Citra's virtual SD directory.
@@ -297,6 +397,26 @@ Base:   00040000XXXXXXXX
 
 If the expected base title id does not match your game, the update/DLC package is for a different title.
 
+### Need more debug information
+
+Use:
+
+```powershell
+-KeepWork -ReportCsv
+```
+
+This keeps temporary work logs under:
+
+```text
+_cxi_out/_work/
+```
+
+and writes the summary report under:
+
+```text
+_cxi_out/_logs/
+```
+
 ## Requirements
 
 - Windows 7 SP1 x64 or newer
@@ -319,13 +439,20 @@ If the expected base title id does not match your game, the update/DLC package i
 ## Recommended `.gitignore`
 
 ```gitignore
+# Generated output
 _cxi_out/
+
+# Real game files / conversion outputs
 *.cia
 *.3ds
 *.cci
 *.cxi
+
+# Redux temporary files
 bin/tmp.*
 bin/__cia_build_*/
+tmp.*.ncch
+tmp.*.cia
 __cxi_stage*
 ```
 

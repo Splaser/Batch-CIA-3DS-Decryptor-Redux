@@ -76,15 +76,25 @@ $Makerom = Join-Path $BinDir "makerom.exe"
 $Decrypt = Join-Path $BinDir "decrypt.exe"
 $SeedDb  = Join-Path $BinDir "seeddb.bin"
 
-$OutCxi = Join-Path $OutDir "cxi"
-$OutCci = Join-Path $OutDir "cci"
-$OutInstallCia = Join-Path $OutDir "cia_install"
-$OutSdInstall  = Join-Path $OutDir "sd_install"
-$OutLog = Join-Path $OutDir "logs"
-$OutBad = Join-Path $OutDir "bad"
+$OutCxi        = Join-Path $OutDir "cxi"
+$OutLoosePatch = Join-Path $OutDir "loosepatch"
 
-foreach ($p in @($OutDir, $OutCxi, $OutCci, $OutInstallCia, $OutSdInstall, $OutLog, $OutBad)) {
+# Optional / internal dirs
+$OutWork       = Join-Path $OutDir "_work"
+$OutLog        = Join-Path $OutDir "_logs"
+$OutCci        = Join-Path $OutDir "_cci"
+$OutInstallCia = Join-Path $OutDir "_cia_install"
+
+foreach ($p in @($OutDir, $OutCxi, $OutLoosePatch)) {
     New-Item -ItemType Directory -Force -Path $p | Out-Null
+}
+
+if ($Mode -in @("CCI", "Both")) {
+    New-Item -ItemType Directory -Force -Path $OutCci | Out-Null
+}
+
+if ($ReportCsv) {
+    New-Item -ItemType Directory -Force -Path $OutLog | Out-Null
 }
 
 $ReportPath = if ($ReportCsv) {
@@ -1184,11 +1194,20 @@ Write-Host ""
 
 foreach ($file in $inputFiles) {
     $base = Get-SafeBaseName $file
-    $work = Join-Path $OutLog ("work_" + [guid]::NewGuid().ToString("N"))
+
+    # Runtime temp workspace.
+    # This is needed for extraction/conversion, but should not be a user-facing output.
+    $work = Join-Path $OutWork ("work_" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+    # Runtime logs are always created inside _work.
+    # They are auto-removed on success unless -KeepWork is used.
     $logDir = Join-Path $work "logs"
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
     $outCxiPath = Join-Path $OutCxi ($base + ".cxi")
+
+    # Optional outputs: don't create their parent dirs until actually needed.
     $outCciPath = Join-Path $OutCci ($base + ".cci")
     $outInstallCiaPath = Join-Path $OutInstallCia ($base + ".decrypted.cia")
 
@@ -1211,7 +1230,7 @@ foreach ($file in $inputFiles) {
         if ((Test-Path $outCciPath) -and -not $Force -and ($Mode -in @("CCI", "Both"))) {
             throw "Output exists: $outCciPath ; use -Force to overwrite."
         }
-        if ((Test-Path -LiteralPath $outInstallCiaPath) -and -not $Force) {
+        if ($KeepInstallCia -and (Test-Path -LiteralPath $outInstallCiaPath) -and -not $Force) {
             throw "Output exists: $outInstallCiaPath ; use -Force to overwrite."
         }
 
@@ -1303,33 +1322,50 @@ foreach ($file in $inputFiles) {
                     $outInstallCiaPath = Join-Path $OutInstallCia ("{0} [{1}].decrypted.cia" -f $base, $installTitleId)
                 }
 
-                if ((Test-Path -LiteralPath $outInstallCiaPath) -and -not $Force) {
+                if ($KeepInstallCia -and (Test-Path -LiteralPath $outInstallCiaPath) -and -not $Force) {
                     throw "Output exists: $outInstallCiaPath ; use -Force to overwrite."
                 }
 
-                try {
-                    New-InstallCiaFromNcch `
-                        -NcchFiles $ncch `
-                        -OutPath $outInstallCiaPath `
-                        -LogPath (Join-Path $logDir ($base + ".makerom.install.cia.txt")) `
-                        -CiaInfo $ciaInfo
+                # Default INSTALL_ONLY output:
+                #   DLC / Update CIA -> loosepatch/title/<hi>/<lo>/content/*.app
+                #
+                # Optional:
+                #   -KeepInstallCia also emits _cia_install/*.decrypted.cia
 
-                    $method = $decryptMethod + "+makerom-install-cia"
-                    Write-Ok "  [OK] INSTALL CIA: $outInstallCiaPath"
+                if ($KeepInstallCia) {
+                    New-Item -ItemType Directory -Force -Path $OutInstallCia | Out-Null
+
+                    try {
+                        New-InstallCiaFromNcch `
+                            -NcchFiles $ncch `
+                            -OutPath $outInstallCiaPath `
+                            -LogPath (Join-Path $logDir ($base + ".makerom.install.cia.txt")) `
+                            -CiaInfo $ciaInfo
+
+                        $method = $decryptMethod + "+makerom-install-cia"
+                        Write-Ok "  [OK] INSTALL CIA: $outInstallCiaPath"
+                    }
+                    catch {
+                        Write-Warn "  [WARN] makerom install CIA failed; continuing with loose layout."
+                        Write-Warn ("  [WARN] " + $_.Exception.Message)
+                    }
                 }
-                catch {
-                    Write-Warn "  [WARN] makerom install CIA failed; fallback to loose SD install layout."
-                    Write-Warn ("  [WARN] " + $_.Exception.Message)
 
-                    $looseInstallPath = New-LooseInstallLayoutFromNcch `
-                        -NcchFiles $ncch `
-                        -OutRoot $OutSdInstall `
-                        -InstallTitleId $installTitleId `
-                        -CiaInfo $ciaInfo
+                $looseInstallPath = New-LooseInstallLayoutFromNcch `
+                    -NcchFiles $ncch `
+                    -OutRoot $OutLoosePatch `
+                    -InstallTitleId $installTitleId `
+                    -CiaInfo $ciaInfo
 
+                if ($method) {
+                    $method += "+loose-sd-install-layout"
+                }
+                else {
                     $method = $decryptMethod + "+loose-sd-install-layout"
-                    Write-Ok "  [OK] LOOSE INSTALL: $looseInstallPath"
                 }
+
+                Write-Ok "  [OK] LOOSE INSTALL: $looseInstallPath"
+
 
                 $status = "OK"
                 $issue = "INSTALL_ONLY_DLC_OR_UPDATE"
@@ -1353,7 +1389,7 @@ foreach ($file in $inputFiles) {
         elseif (($Mode -in @("CCI", "Both")) -and (Test-Path -LiteralPath $outCciPath)) {
             $verifyTarget = $outCciPath
         }
-        elseif (Test-Path -LiteralPath $outInstallCiaPath) {
+        elseif ($KeepInstallCia -and (Test-Path -LiteralPath $outInstallCiaPath)) {
             $verifyTarget = $outInstallCiaPath
         }
 
